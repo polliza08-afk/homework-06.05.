@@ -1,0 +1,378 @@
+﻿using System.Drawing;
+using System.Reflection.Emit;
+using System.Text.Json;
+using System.Xml.Linq;
+using System.Text.Json;
+
+namespace FormOptions
+{
+    public partial class RegisterForm : Form
+    {
+        bool isDarkMode = false; //Поточний стан теми(світла/темна)
+        string configPath = "appsettings.json"; //Шлях до файлу налаштувань
+
+
+        public RegisterForm()
+        {
+            InitializeComponent();
+
+            //Підписка на події зміни тексту - очищає помилку під полем при введенні
+            txtName.TextChanged += (s, e) => ClearErrorOnInput(txtName, label8);
+            txtLastName.TextChanged += (s, e) => ClearErrorOnInput(txtLastName, label9);
+            txtGroup.TextChanged += (s, e) => ClearErrorOnInput(txtGroup, label10);
+            txtEmail.TextChanged += (s, e) => ClearErrorOnInput(txtEmail, label11);
+            txtPassword.TextChanged += (s, e) => ClearErrorOnInput(txtPassword, label12);
+            txtPasswordCheck.TextChanged += (s, e) => ClearErrorOnInput(txtPasswordCheck, label13);
+        }
+
+        //Викликається при завантаженні форми
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            LoadSettings(); //Завантажує збережену тему
+            ApplyTheme(); //Застолсовує тему до елементів
+        }
+
+        //Перемикає тему та зберігає вибір
+        private void btnChangeStyles_Click(object sender, EventArgs e)
+        {
+            isDarkMode = !isDarkMode;
+            ApplyTheme();
+            SaveSettings();
+        }
+
+        //Застосовує темну або світлу тему до всіх елементів форми
+        private void ApplyTheme()
+        {
+            bool dark = isDarkMode;
+            this.BackColor = dark ? Color.FromArgb(26, 26, 26) : SystemColors.Control;
+
+            foreach (Control ctrl in this.Controls)
+            {
+                if (ctrl is Label lbl)
+                {
+                    //Мітки з тегом "error" фарбуються в червоний
+                    if (lbl.Tag?.ToString() == "error")
+                    {
+                        lbl.ForeColor = dark ? Color.LightCoral : Color.Red;
+                    }
+                    else
+                    {
+                        lbl.ForeColor = dark ? Color.White : Color.Black;
+                    }
+                }
+
+
+                if (ctrl is Button btn)
+                {
+                    btn.BackColor = dark ? Color.DimGray : Color.White;
+                    btn.ForeColor = dark ? Color.White : Color.Black;
+                }
+            }
+            //Змінює текст кнопки на протилежну тему
+            btnChangeStyles.Text = dark ? "Світла" : "Темна";
+        }
+
+        //Зчитує збережену тему з json файлу
+        private void LoadSettings()
+        {
+            try
+            {
+                if (File.Exists(configPath))
+                {
+                    string jsonString = File.ReadAllText(configPath);
+                    using (JsonDocument doc = JsonDocument.Parse(jsonString))
+                    {
+                        isDarkMode = (doc.RootElement.GetProperty("theme").GetString() == "dark");
+                    }
+                }
+            }
+            catch { } //Ігноруємо помилки читання файлу
+        }
+
+        //Зберігає поточну тему у json файл
+        private void SaveSettings()
+        {
+            try
+            {
+                var data = new { theme = isDarkMode ? "dark" : "light" };
+                string jsonString = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(configPath, jsonString);
+            }
+            catch { }
+        }
+
+        //Приховує мітку помилки
+        //Якщо поле більше не порожнє
+        private void ClearErrorOnInput(TextBox textBox, Label errorLabel)
+        {
+            if (!string.IsNullOrWhiteSpace(textBox.Text))
+            {
+                errorLabel.Visible = false;
+            }
+        }
+
+        //Валідація форми та збереження нового користувача
+        private void btnSave_Click(object sender, EventArgs e)
+        {
+            bool hasError = false;
+
+            //Перевіряє всі поля на порожність
+            if (string.IsNullOrWhiteSpace(txtName.Text))
+            {
+                label8.Visible = true;
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(txtLastName.Text))
+            {
+                label9.Visible = true;
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(txtGroup.Text))
+            {
+                label10.Visible = true;
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(txtEmail.Text))
+            {
+                label11.Visible = true;
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(txtPassword.Text))
+            {
+                label12.Visible = true;
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(txtPasswordCheck.Text))
+            {
+                label13.Visible = true;
+                hasError = true;
+            }
+
+            //Перевіряє збігу паролів
+            if (txtPassword.Text != txtPasswordCheck.Text)
+            {
+                label13.Visible = true;
+                hasError = true;
+            }
+            if (!hasError)
+            {
+                DialogResult = DialogResult.OK;
+
+                //Створює об'єкт користувача з хешованим паролем
+                User newUser = new User
+                {
+                    Name = txtName.Text,
+                    LastName = txtLastName.Text,
+                    Group = txtGroup.Text,
+                    Email = txtEmail.Text,
+                    Password = hashPasswordMD5(txtPassword.Text)
+                };
+
+                //Серіалізація та збереження користувача у файл
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(newUser);
+                File.WriteAllText("users.json", json);
+
+                //Відкриває форми входу після успішної реєстрації
+                LoginForm dlg = new LoginForm();
+                dlg.ShowDialog();
+                this.Close();
+            }
+
+        }
+
+        //Перемикає видимість пароля
+        private void btnVissiblePassword_Click(object sender, EventArgs e)
+        {
+            txtPassword.UseSystemPasswordChar = !txtPassword.UseSystemPasswordChar;
+        }
+
+        //Перемикає видимість підтвердження пароля
+        private void btnCheck_Click(object sender, EventArgs e)
+        {
+            txtPasswordCheck.UseSystemPasswordChar = !txtPasswordCheck.UseSystemPasswordChar;
+        }
+
+        //Хешує пароль алгоритмом MD5 та повертає рядок у верхньому регістрі
+        private string hashPasswordMD5(string password)
+        {
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            byte[] inputBytes = System.Text.Encoding.ASCII.GetBytes(password);
+            byte[] hashBytes = md5.ComputeHash(inputBytes);
+            return Convert.ToHexString(hashBytes);
+        }
+
+    }
+}
+
+
+
+using System.Text.Json;
+
+namespace FormOptions
+{
+    public partial class LoginForm : Form
+    {
+        bool isDarkMode = false; //Поточний стан теми
+        string configPath = "appsettings.json"; //Шлях до файлу налаштувань
+
+
+        public LoginForm()
+        {
+            InitializeComponent();
+
+            //Очищає помилки під полями при введенні тексту
+            txtEmail.TextChanged += (s, e) => ClearErrorOnInput(txtEmail, label11);
+            txtPassword.TextChanged += (s, e) => ClearErrorOnInput(txtPassword, label12);
+        }
+
+        //Викликається при завантаженні форми
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            LoadSettings(); //Завантажує збережену тему
+            ApplyTheme(); //Застосовує тему до елементів
+        }
+
+        //Перемикає тему та зберігає вибір
+        private void btnChangeStyles_Click(object sender, EventArgs e)
+        {
+            isDarkMode = !isDarkMode;
+            ApplyTheme();
+            SaveSettings();
+        }
+
+        //Застосовує темну або світлу тему до всіх елементів форми
+        private void ApplyTheme()
+        {
+            bool dark = isDarkMode;
+            this.BackColor = dark ? Color.FromArgb(26, 26, 26) : SystemColors.Control;
+
+            foreach (Control ctrl in this.Controls)
+            {
+                if (ctrl is Label lbl)
+                {
+                    //Мітки з тегом "error" червоний залежно від теми
+                    if (lbl.Tag?.ToString() == "error")
+                    {
+                        lbl.ForeColor = dark ? Color.LightCoral : Color.Red;
+                    }
+                    else
+                    {
+                        lbl.ForeColor = dark ? Color.White : Color.Black;
+                    }
+                }
+
+
+                if (ctrl is Button btn)
+                {
+                    btn.BackColor = dark ? Color.DimGray : Color.White;
+                    btn.ForeColor = dark ? Color.White : Color.Black;
+                }
+            }
+            //Змінює текст кнопки на протилежну тему
+            btnChangeStyles.Text = dark ? "Світла" : "Темна";
+        }
+
+        //Зчитує збережену тему з json файлу
+        private void LoadSettings()
+        {
+            try
+            {
+                if (File.Exists(configPath))
+                {
+                    string jsonString = File.ReadAllText(configPath);
+                    using (JsonDocument doc = JsonDocument.Parse(jsonString))
+                    {
+                        isDarkMode = (doc.RootElement.GetProperty("theme").GetString() == "dark");
+                    }
+                }
+            }
+            catch { } //Ігноруємо всі помилки файлу
+        }
+
+        //Зберігає поточну тему у json файл
+        private void SaveSettings()
+        {
+            try
+            {
+                var data = new { theme = isDarkMode ? "dark" : "light" };
+                string jsonString = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(configPath, jsonString);
+            }
+            catch { }
+        }
+
+        //Приховує мітку помилки
+        //Якщо поле більше не порожнє
+        private void ClearErrorOnInput(TextBox textBox, Label errorLabel)
+        {
+            if (!string.IsNullOrWhiteSpace(textBox.Text))
+            {
+                errorLabel.Visible = false;
+            }
+        }
+
+        //Валідація форми та авторизація користувача
+        private void btnSave_Click(object sender, EventArgs e)
+        {
+            bool hasError = false;
+
+            //Перевіряє заповненості полів
+            if (string.IsNullOrWhiteSpace(txtEmail.Text))
+            {
+                label11.Visible = true;
+                hasError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(txtPassword.Text))
+            {
+                label12.Visible = true;
+                hasError = true;
+            }
+
+            if (!hasError)
+            {
+                //Зчитує збереженого користувача з файлу
+                var user = Newtonsoft.Json.JsonConvert.DeserializeObject<User>(File.ReadAllText("users.json"));
+
+                //Порівнює Email та хеш пароля
+                if (user.Email == txtEmail.Text && user.Password == hashPasswordMD5(txtPassword.Text))
+                {
+                    MessageBox.Show("Вхід успішний!", "Успіх", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    this.Hide();
+
+                    //Відкриваємо головну форму після успішного входу
+                    MainForm mainForm = new MainForm();
+                    mainForm.ShowDialog();
+                    this.Close();
+                }
+                else
+                {
+                    //Повідомлення про невірні дані
+                    MessageBox.Show("Невірний email або пароль.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+
+        }
+
+        //Перемикає видимість пароля
+        private void btnVissiblePassword_Click(object sender, EventArgs e)
+        {
+            txtPassword.UseSystemPasswordChar = !txtPassword.UseSystemPasswordChar;
+        }
+
+        //Хешує пароль алгоритмом MD5 та повертає рядок у hex-форматі
+        private string hashPasswordMD5(string password)
+        {
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            byte[] inputBytes = System.Text.Encoding.ASCII.GetBytes(password); //Конвертація рядка в байти
+            byte[] hashBytes = md5.ComputeHash(inputBytes); //Обчислення MD5-хешу
+            return Convert.ToHexString(hashBytes); //Повертає хешу як рядка
+        }
+
+    }
+}
